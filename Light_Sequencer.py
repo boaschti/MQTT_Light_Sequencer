@@ -1,12 +1,17 @@
 # -*- coding: utf-8 -*-
 from time import sleep
+from multiprocessing import Queue
 import time
- 
- 
+import paho.mqtt.client as mqtt
+import json
+
+client = mqtt.Client()
+q = Queue()
+
 # Anforderung:
 # Erforderliche Parameter mit constanten Key Namen: Nr, fadeTime, wait, srcTopic, dstTopic, chOffset
 # szene Keys müssen einzigartig sein!!!
-# universe Keys innerhalb einer szene müssen einzigartig sein!!!
+# universe Keys innerhalb einer szene muessen einzigartig sein!!!
 # Syntax: {szeneA:{Nr, fadeTime, wait, universeA:{srcTopic, dstTopic, chOffset}, universeB:{srcTopic, dstTopic, chOffset}}, szeneB:....}
 # Gespeicherte Werte unter srcTopic {"1": 8, "2": 67, "3": 6, "4": 5, "relay": "on", "r": 8}
  
@@ -15,8 +20,10 @@ import time
 Data = ""
 DataTopic =""
  
-# Eine Variable und ein Funktion zum Testen des Skripts
-testProg = {"sceneFoo2": {"Nr":2, "fadeTime": 10, "wait": 0.5, "universeFoo":{"srcTopic": "foo/bar", "dstTopic": "foo/bar", "chOffset": 0}, "universeBar":{"srcTopic": "bar/foo", "dstTopic": "foofoo/bar", "chOffset": 14}}, "szeneBar1": {"Nr":1, "fadeTime": 2.5, "wait": 1.0, "universeFoo":{"srcTopic": "bar/foobar", "dstTopic": "foo/bar", "chOffset": 2}, "universeBarFoo":{"srcTopic": "bar/barfoo", "dstTopic": "foo/foobar", "chOffset": 14}}, "szeneBar3": {"Nr":3, "fadeTime": 2.6, "wait": 0.8, "universeFooFoo":{"srcTopic": "bar/barfoo", "dstTopic": "foo/bar", "chOffset": 2}, "universeBarFoo":{"srcTopic": "bar/barfoo", "dstTopic": "foo/foobar", "chOffset": 15}} }
+# Eine Variable und eine Funktion zum Testen des Skripts
+testProg = {"sceneFoo2": {"Nr":2, "fadeTime": 10, "wait": 0.5, "universeFoo":{"srcTopic": "dmx/backup/szene/hell", "dstTopic": "foo/bar", "chOffset": 0}, "universeBar":{"srcTopic": "dmx/backup/szene/hell", "dstTopic": "foofoo/bar", "chOffset": 14}}, "szeneBar1": {"Nr":1, "fadeTime": 2.5, "wait": 1.0, "universeFoo":{"srcTopic": "dmx/backup/pos/Garten", "dstTopic": "foo/bar", "chOffset": 2}, "universeBarFoo":{"srcTopic": "dmx/backup/pos/Garten", "dstTopic": "foo/foobar", "chOffset": 14}}, "szeneBar3": {"Nr":3, "fadeTime": 2.6, "wait": 0.8, "universeFooFoo":{"srcTopic": "dmx/backup/pos/Big_Baam", "dstTopic": "foo/bar", "chOffset": 2}, "universeBarFoo":{"srcTopic": "dmx/backup/pos/Big_Baam", "dstTopic": "foo/foobar", "chOffset": 15}} }
+
+#testProg = {"sceneFoo2": {"Nr":2, "fadeTime": 10, "wait": 0.5, "universeFoo":{"srcTopic": "foo/bar", "dstTopic": "foo/bar", "chOffset": 0}, "universeBar":{"srcTopic": "bar/foo", "dstTopic": "foofoo/bar", "chOffset": 14}}, "szeneBar1": {"Nr":1, "fadeTime": 2.5, "wait": 1.0, "universeFoo":{"srcTopic": "bar/foobar", "dstTopic": "foo/bar", "chOffset": 2}, "universeBarFoo":{"srcTopic": "bar/barfoo", "dstTopic": "foo/foobar", "chOffset": 14}}, "szeneBar3": {"Nr":3, "fadeTime": 2.6, "wait": 0.8, "universeFooFoo":{"srcTopic": "bar/barfoo", "dstTopic": "foo/bar", "chOffset": 2}, "universeBarFoo":{"srcTopic": "bar/barfoo", "dstTopic": "foo/foobar", "chOffset": 15}} }
  
 def getDummyData(sceneNr):
     #SrcData.append("13")
@@ -25,34 +32,69 @@ def getDummyData(sceneNr):
     else:
         return {"1": 150, "2": 0, "3": 100, "4": 200, "R":150}
  
- 
-def getMqttData(topic, scene, verbose):
+def on_connect(client, userdata, flags, rc):
+    print("Connected with result code " + str(rc))
+
+def on_message(client, userdata, msg):
+    global Data
+    global DataTopic
+
+    temp = json.loads(str(msg.payload))
+    print(msg.topic + " " + str(msg.payload))
+    
+    data = {}
+    data["payload"] = json.loads(str(msg.payload))
+    data["topic"] = msg.topic
+    
+    for i in temp.keys():
+        if type(temp[i]) is dict:
+            #runProgramm(temp, False, True)
+            break
+        else:
+            Data = str(msg.payload)
+            DataTopic = msg.topic
+            q.put(data)
+            break
+
+client.on_connect = on_connect
+client.on_message = on_message
+client.username_pw_set("mqttClients","MHaPlC86mI")
+
+
+def getMqttData(topic, verbose):
  
     global Data
     global DataTopic
     if verbose:
         print("subscribe to %s" % topic)
-    #subscribe(myProg[scene][universe]["srcTopic"])
+    
+    client.subscribe(topic)
+    
     if verbose:
         print("warte auf Mqtt Daten...")
     # Timout 5s == 500
-    Data = ""
-    DataTopic =""
+    #Data = ""
+    #DataTopic =""
  
-    for _ in range(500):
-        sleep(0.01)
-        # Todo delete following line SrcData = dumps(Data)
-        SrcData = {}
-        if SrcData:
-            if verbose:
-                print("Mqtt Daten empfangen")
-            break
-    if not SrcData:
+    msgdata = q.get()
+    
+    #Data = msgdata["payload"]
+    #DataTopic = msgdata["topic"]
+    
+    if msgdata["payload"] and msgdata["topic"] == topic:
+        if verbose:
+            print("Mqtt Daten empfangen")
+    else:
+        q.put(msgdata)
+
+    if not msgdata["payload"]:
         if verbose:
             print("Error! Keine Mqtt Daten empfangen")
         raise RuntimeError
  
-    return SrcData
+    client.unsubscribe(topic)
+    
+    return msgdata["payload"]
  
  
 def fadeChannels(scene, savedDstData, universes, verbose):
@@ -68,7 +110,7 @@ def fadeChannels(scene, savedDstData, universes, verbose):
             # chOffset anwenden wenn der Channel eine Zahl ist und die Daten im key srcData anpassen
             if channel.isdigit() and scene[device]["chOffset"] != 0:
                 newChannel = str(int(channel) + scene[device]["chOffset"])
-                # Wir müssen uns die Channels merken, die wir verändert haben damit wir diese nachher nicht wieder löschen
+                # Wir muessen uns die Channels merken, die wir veraendert haben damit wir diese nachher nicht wieder loeschen
                 # Das passiert wenn der offset kleiner als die channelanzahl ist
                 savedNewChannel.append(newChannel)
                 scene[device]["srcData"][newChannel] = scene[device]["srcData"][channel]
@@ -78,13 +120,13 @@ def fadeChannels(scene, savedDstData, universes, verbose):
         # Daten eines neuen Topics speichern
         if scene[device]["dstTopic"] not in savedDstData:
             savedDstData[scene[device]["dstTopic"]] = scene[device]["srcData"]
-        # Topic als key im dict anlegen damit man es nachher befüllen kann
+        # Topic als key im dict anlegen damit man es nachher befuellen kann
         if scene[device]["dstTopic"] not in steps:
             steps[scene[device]["dstTopic"]] = {}
             tempFadeData[scene[device]["dstTopic"]] = {}
-        # Wir ermitteln uns den max Delta der Kanäle
+        # Wir ermitteln uns den max Delta der Kanaele
         for channel in scene[device]["srcData"].keys():
-            # Wir speichern uns nicht vorhandene Kanäle
+            # Wir speichern uns nicht vorhandene Kanaele
             if channel not in savedDstData[scene[device]["dstTopic"]]:
                 savedDstData[scene[device]["dstTopic"]][channel] = scene[device]["srcData"][channel]
             if type(scene[device]["srcData"][channel]) is int:
@@ -97,11 +139,11 @@ def fadeChannels(scene, savedDstData, universes, verbose):
                 maxDelta = delta * -1
     if maxDelta:
         stepTime = float(scene["fadeTime"]) / float(maxDelta)
-        # TODO prüfen ob die zeit nicht zu klein ist und evtl schrittweite vergrößern
+        # TODO pruefen ob die zeit nicht zu klein ist und evtl schrittweite vergroessern
  
     for device in universes:
         for channel in scene[device]["srcData"].keys():
-            # Wir errechnen uns die benötigten Steps der Kanäle
+            # Wir errechnen uns die benoetigten Steps der Kanaele
             if channel in savedDstData[scene[device]["dstTopic"]]:
                 if type(scene[device]["srcData"][channel]) is int:
                     if maxDelta > 0:
@@ -115,9 +157,9 @@ def fadeChannels(scene, savedDstData, universes, verbose):
             print("Dim %s in %i steps to:" % (scene[device]["dstTopic"],maxDelta))
             print(scene[device]["srcData"])
             print("Delta:")
-           print(steps[scene[device]["dstTopic"]])
+            print(steps[scene[device]["dstTopic"]])
  
-    # Wir wollen über alle Kanäle faden
+    # Wir wollen ueber alle Kanaele faden
     initVar = True
     dstreached = True
     extraLoop = False
@@ -130,7 +172,7 @@ def fadeChannels(scene, savedDstData, universes, verbose):
             timeStamp = timeStamp + stepTime
         for device in universes:
             for channel in scene[device]["srcData"].keys():
-                # Init Dict mit den benötigten Channels
+                # Init Dict mit den benoetigten Channels
                 if initVar:
                     if type(scene[device]["srcData"][channel]) is int:
                         tempFadeData[scene[device]["dstTopic"]][channel] = float(savedDstData[scene[device]["dstTopic"]][channel]) + steps[scene[device]["dstTopic"]][channel]
@@ -143,12 +185,13 @@ def fadeChannels(scene, savedDstData, universes, verbose):
                     savedDstData[scene[device]["dstTopic"]][channel] = int(tempFadeData[scene[device]["dstTopic"]][channel])
                 if savedDstData[scene[device]["dstTopic"]][channel] != scene[device]["srcData"][channel] and i + 1 == maxDelta:
                     dstreached = False
+        # Todo send data here
+        # client.publish(topic, json.dumps(payload))
  
         initVar = False
  
         if verbose:
             print(savedDstData)
-        # Todo send data here
  
         if dstreached:
             while timeStamp > time.time():
@@ -176,12 +219,12 @@ def fadeChannels(scene, savedDstData, universes, verbose):
  
 def runProgramm(myProg, testMode = False, verbose = False):
     savedDstData = {}
-    # Sicherstellen, dass die Szenen nach einander ausgeführt werden deswegen zählen wir die Szenen und laufen
-    # mit der sceneNr über die Schleife
+    # Sicherstellen, dass die Szenen nach einander ausgefuehrt werden deswegen zaehlen wir die Szenen und laufen
+    # mit der sceneNr ueber die Schleife
     for sceneNr in range(1, 1+len(myProg.keys())):
         if verbose:
             print ("sceneNr: %i" % sceneNr)
-        # Wir laufen über alle Szenen und prüfen auf die sceneNr
+        # Wir laufen über alle Szenen und pruefen auf die sceneNr
         for scene in myProg.keys():
             if myProg[scene]["Nr"] == sceneNr:
                 sceneData = myProg[scene].keys()
@@ -198,14 +241,13 @@ def runProgramm(myProg, testMode = False, verbose = False):
                     print(universes)
                 # Wir holen uns die Quelldaten der Universen indem wir uns auf das srcTopic subscriben
                 for universe in universes:
-                    # todo del scene parameter
                    
                     #print("publish to %s" % myProg[scene][universe]["dstTopic"])
                     #print("channel offset %i" % myProg[scene][universe]["chOffset"])
                     if testMode:
                         myProg[scene][universe]["srcData"] = getDummyData(sceneNr)
                     else:
-                        myProg[scene][universe]["srcData"] = getMqttData(myProg[scene][universe]["srcTopic"], scene, verbose)
+                        myProg[scene][universe]["srcData"] = getMqttData(myProg[scene][universe]["srcTopic"], verbose)
                     del myProg[scene][universe]["srcTopic"]
  
                 # Fade all channels
@@ -222,4 +264,14 @@ def runProgramm(myProg, testMode = False, verbose = False):
                     print("wait %f" % myProg[scene]["wait"])
  
  
-runProgramm(testProg, testMode = True, verbose = True)
+#Todo diese variablen sollen per argument uebergeben werden
+client.connect("192.168.178.38", 1883, 60)
+client.loop_start()
+client.subscribe("fader/programm")
+
+runProgramm(testProg, testMode = False, verbose = True)
+
+while(1):
+    sleep(0.1)
+    
+
