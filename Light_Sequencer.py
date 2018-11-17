@@ -48,7 +48,7 @@ def on_message(client, userdata, msg):
     
     for i in temp.keys():
         if type(temp[i]) is dict:
-            #runProgramm(temp, False, True)
+            runProgramm(temp, False, True)
             break
         else:
             Data = str(msg.payload)
@@ -273,7 +273,7 @@ client.connect("192.168.178.38", 1883, 60)
 client.loop_start()
 client.subscribe("fader/programm")
 
-runProgramm(testProg, testMode = False, verbose = True)
+#runProgramm(testProg, testMode = False, verbose = True)
 
 while(1):
     sleep(0.1)
