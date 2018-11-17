@@ -58,7 +58,7 @@ def on_message(client, userdata, msg):
 
 client.on_connect = on_connect
 client.on_message = on_message
-client.username_pw_set("mqttClients","MHaPlC86mI")
+
 
 
 def getMqttData(topic, verbose):
@@ -171,6 +171,7 @@ def fadeChannels(scene, savedDstData, universes, verbose):
         if not extraLoop:
             timeStamp = timeStamp + stepTime
         for device in universes:
+            publishData = False
             for channel in scene[device]["srcData"].keys():
                 # Init Dict mit den benoetigten Channels
                 if initVar:
@@ -179,14 +180,17 @@ def fadeChannels(scene, savedDstData, universes, verbose):
                         savedDstData[scene[device]["dstTopic"]][channel] = int(tempFadeData[scene[device]["dstTopic"]][channel])
                     else:
                         savedDstData[scene[device]["dstTopic"]][channel] = scene[device]["srcData"][channel]
+                    publishData = True
                 # Errechne die neuen Dim Werte wenn der Zielwert noch nicht erreicht ist (Floating Point addition!!)
                 elif savedDstData[scene[device]["dstTopic"]][channel] != scene[device]["srcData"][channel]:
                     tempFadeData[scene[device]["dstTopic"]][channel] = tempFadeData[scene[device]["dstTopic"]][channel] + steps[scene[device]["dstTopic"]][channel]
                     savedDstData[scene[device]["dstTopic"]][channel] = int(tempFadeData[scene[device]["dstTopic"]][channel])
+                publishData = True
                 if savedDstData[scene[device]["dstTopic"]][channel] != scene[device]["srcData"][channel] and i + 1 == maxDelta:
                     dstreached = False
-        # Todo send data here
-        # client.publish(topic, json.dumps(payload))
+            # Todo send data here
+            if publishData:
+                client.publish(scene[device]["dstTopic"], json.dumps(savedDstData[scene[device]["dstTopic"]]), retain = False)
  
         initVar = False
  
