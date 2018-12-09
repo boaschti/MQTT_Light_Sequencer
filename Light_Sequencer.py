@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 from time import sleep
-from multiprocessing import Queue
 import time
 import paho.mqtt.client as mqtt
 import json
+import thread
+from threading import Thread
+
 
 client = mqtt.Client()
-q = Queue()
 
 # Anforderung:
 # Erforderliche Parameter mit constanten Key Namen: Nr, fadeTime, wait, srcTopic, dstTopic, chOffset
@@ -17,8 +18,10 @@ q = Queue()
  
  
 # einige Globale Variablen zum Empfangen der Daten
-Data = ""
-DataTopic =""
+
+SrcData = {}
+Programms = {}
+
  
 # Eine Variable und eine Funktion zum Testen des Skripts
 testProg = {"sceneFoo2": {"Nr":2, "fadeTime": 10, "wait": 0.5, "universeFoo":{"srcTopic": "dmx/backup/szene/hell", "dstTopic": "foo/bar", "chOffset": 0}, "universeBar":{"srcTopic": "dmx/backup/szene/hell", "dstTopic": "foofoo/bar", "chOffset": 14}}, "szeneBar1": {"Nr":1, "fadeTime": 2.5, "wait": 1.0, "universeFoo":{"srcTopic": "dmx/backup/pos/Garten", "dstTopic": "foo/bar", "chOffset": 2}, "universeBarFoo":{"srcTopic": "dmx/backup/pos/Garten", "dstTopic": "foo/foobar", "chOffset": 14}}, "szeneBar3": {"Nr":3, "fadeTime": 2.6, "wait": 0.8, "universeFooFoo":{"srcTopic": "dmx/backup/pos/Big_Baam", "dstTopic": "foo/bar", "chOffset": 2}, "universeBarFoo":{"srcTopic": "dmx/backup/pos/Big_Baam", "dstTopic": "foo/foobar", "chOffset": 15}} }
@@ -26,7 +29,6 @@ testProg = {"sceneFoo2": {"Nr":2, "fadeTime": 10, "wait": 0.5, "universeFoo":{"s
 #testProg = {"sceneFoo2": {"Nr":2, "fadeTime": 10, "wait": 0.5, "universeFoo":{"srcTopic": "foo/bar", "dstTopic": "foo/bar", "chOffset": 0}, "universeBar":{"srcTopic": "bar/foo", "dstTopic": "foofoo/bar", "chOffset": 14}}, "szeneBar1": {"Nr":1, "fadeTime": 2.5, "wait": 1.0, "universeFoo":{"srcTopic": "bar/foobar", "dstTopic": "foo/bar", "chOffset": 2}, "universeBarFoo":{"srcTopic": "bar/barfoo", "dstTopic": "foo/foobar", "chOffset": 14}}, "szeneBar3": {"Nr":3, "fadeTime": 2.6, "wait": 0.8, "universeFooFoo":{"srcTopic": "bar/barfoo", "dstTopic": "foo/bar", "chOffset": 2}, "universeBarFoo":{"srcTopic": "bar/barfoo", "dstTopic": "foo/foobar", "chOffset": 15}} }
  
 def getDummyData(sceneNr):
-    #SrcData.append("13")
     if sceneNr == 2:
         return {"1": 8, "2": 67, "3": 6, "4": 5, "5": 100, "R":200, "Relay":"On"}
     else:
@@ -36,24 +38,20 @@ def on_connect(client, userdata, flags, rc):
     print("Connected with result code " + str(rc))
 
 def on_message(client, userdata, msg):
-    global Data
-    global DataTopic
+    global SrcData
+    global Programms
 
     temp = json.loads(str(msg.payload))
+    print("thread %i" % thread.get_ident())
     print(msg.topic + " " + str(msg.payload))
-    
-    data = {}
-    data["payload"] = json.loads(str(msg.payload))
-    data["topic"] = msg.topic
-    
+        
     for i in temp.keys():
         if type(temp[i]) is dict:
-            runProgramm(temp, False, True)
+            t = Thread(target=runProgramm, args=(temp, False, True,))
+            t.start()
             break
         else:
-            Data = str(msg.payload)
-            DataTopic = msg.topic
-            q.put(data)
+            SrcData[msg.topic] = json.loads(str(msg.payload))
             break
 
 client.on_connect = on_connect
@@ -71,31 +69,25 @@ def getMqttData(topic, verbose):
     client.subscribe(topic)
     
     if verbose:
+        print("thread %i" % thread.get_ident())
         print("warte auf Mqtt Daten...")
-    # Timout 5s == 500
-    #Data = ""
-    #DataTopic =""
  
-    msgdata = q.get()
-    
-    #Data = msgdata["payload"]
-    #DataTopic = msgdata["topic"]
-    
-    if msgdata["payload"] and msgdata["topic"] == topic:
-        if verbose:
-            print("Mqtt Daten empfangen")
-    else:
-        q.put(msgdata)
+    # Timout 5s == 500
+    for _ in range(500):
+        if topic in SrcData:
+            if verbose:
+                print("Mqtt Daten empfangen")
+            client.unsubscribe(topic)
+            return SrcData[topic]
+        sleep(0.1)
 
-    if not msgdata["payload"]:
+    if not topic in SrcData:
         if verbose:
             print("Error! Keine Mqtt Daten empfangen")
         raise RuntimeError
  
     client.unsubscribe(topic)
-    
-    return msgdata["payload"]
- 
+     
  
 def fadeChannels(scene, savedDstData, universes, verbose):
  
