@@ -97,18 +97,22 @@ def fadeChannels(scene, savedDstData, universes, verbose):
     stepTime = 0.0
  
     for device in universes:
-        savedNewChannel = []
+        
+        channelsModified = False
         for channel in scene[device]["srcData"].keys():
             # chOffset anwenden wenn der Channel eine Zahl ist und die Daten im key srcData anpassen
             if channel.isdigit() and scene[device]["chOffset"] != 0:
+                # Wir müssen uns die neuen Daten unter einem neuen Key speichern da die Daten sonst evtl für andere Lampen auch verändert werden.
+                # Das liegt daran, dass in Python Key mit gleichen Inhalt auf eine Id referenziert sind. Diese Id ändert sich beim ändern der Daten nicht 
+                if "newSrcData" not in scene[device]:
+                    scene[device]["newSrcData"] = {}
                 newChannel = str(int(channel) + scene[device]["chOffset"])
-                # Wir muessen uns die Channels merken, die wir veraendert haben damit wir diese nachher nicht wieder loeschen
-                # Das passiert wenn der offset kleiner als die channelanzahl ist
-                savedNewChannel.append(newChannel)
-                scene[device]["srcData"][newChannel] = scene[device]["srcData"][channel]
-                if not channel in savedNewChannel:
-                    del scene[device]["srcData"][channel]
- 
+                scene[device]["newSrcData"][newChannel] = scene[device]["srcData"][channel]
+                channelsModified = True
+        if channelsModified:
+            del scene[device]["srcData"]
+            scene[device]["srcData"] = scene[device].pop("newSrcData")
+            
         # Daten eines neuen Topics speichern
         if scene[device]["dstTopic"] not in savedDstData:
             savedDstData[scene[device]["dstTopic"]] = scene[device]["srcData"]
