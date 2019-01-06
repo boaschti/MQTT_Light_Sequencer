@@ -151,6 +151,7 @@ def fadeChannels(scene, savedDstData, universes, verbose):
             print("dstAdd:")
             print(scene[device]["dstTopic"])
             print("Dim %s in %i steps to:" % (scene[device]["dstTopic"],maxDelta))
+            print("StepTime: %f" %stepTime)
             print(scene[device]["srcData"])
             print("Delta:")
             print(steps[scene[device]["dstTopic"]])
@@ -218,7 +219,9 @@ def fadeChannels(scene, savedDstData, universes, verbose):
  
  
 def runProgramm(myProg, testMode = False, verbose = False):
-    savedDstData = {}
+    if not hasattr(runProgramm, "savedDstData"):
+        runProgramm.savedDstData = {}
+        
     # Sicherstellen, dass die Szenen nach einander ausgefuehrt werden deswegen zaehlen wir die Szenen und laufen
     # mit der sceneNr ueber die Schleife
     for sceneNr in range(1, 1+len(myProg.keys())):
@@ -251,11 +254,11 @@ def runProgramm(myProg, testMode = False, verbose = False):
                     del myProg[scene][universe]["srcTopic"]
  
                 # Fade all channels
-                savedDstData = fadeChannels(myProg[scene], savedDstData, universes, verbose)
+                runProgramm.savedDstData = fadeChannels(myProg[scene], runProgramm.savedDstData, universes, verbose)
  
                 if verbose:
                     print("#################################")
-                    print(savedDstData)
+                    print(runProgramm.savedDstData)
                     print("#################################")
  
                 if verbose:
