@@ -254,7 +254,7 @@ def runProgramm(myProg, testMode = False, verbose = False):
                     del myProg[scene][universe]["srcTopic"]
  
                 # Fade all channels
-                runProgramm.savedDstData = fadeChannels(myProg[scene], runProgramm.savedDstData, universes, verbose)
+                runProgramm.savedDstData.update(fadeChannels(myProg[scene], runProgramm.savedDstData, universes, verbose))
  
                 if verbose:
                     print("#################################")
