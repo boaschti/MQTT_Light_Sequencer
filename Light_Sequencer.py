@@ -17,12 +17,17 @@ client = mqtt.Client()
 # Gespeicherte Werte unter srcTopic {"1": 8, "2": 67, "3": 6, "4": 5, "relay": "on", "r": 8}
  
  
+# console test data:
+
+# mosquitto_pub -d  -u mqttClients -P MHaPlC86mI -t dmx/fader/programm -m "{\"sceneFoo2\": {\"Nr\":2, \"fadeTime\": 10, \"wait\": 0.5, \"universeFoo\":{\"srcTopic\": \"dmx/backup/szene/hell\", \"dstTopic\": \"dmx/mover_1/set/programm\", \"chOffset\": 0}, \"universeBar\":{\"srcTopic\": \"dmx/backup/szene/hell\", \"dstTopic\": \"dmx/mover_1/set/programm\", \"chOffset\": 14}, \"universebFoo\":{\"srcTopic\": \"dmx/backup/pos/Garten\", \"dstTopic\": \"dmx/mover_1/set/programm\", \"chOffset\": 0}, \"universeBarFoo\":{\"srcTopic\": \"dmx/backup/pos/Garten\", \"dstTopic\": \"dmx/mover_1/set/programm\", \"chOffset\": 14}},\"szeneBar1\": {\"Nr\":1, \"fadeTime\": 5.0, \"wait\": 1.0, \"universeFoo\":{\"srcTopic\": \"dmx/backup/pos/Terrasse\", \"dstTopic\": \"dmx/mover_1/set/programm\", \"chOffset\": 0}, \"universeBarFoo\":{\"srcTopic\": \"dmx/backup/pos/Terrasse\", \"dstTopic\": \"dmx/mover_1/set/programm\", \"chOffset\": 14}, \"universebFoo\":{\"srcTopic\": \"dmx/backup/szene/chillig_1\", \"dstTopic\": \"dmx/mover_1/set/programm\", \"chOffset\": 0}, \"universeBar\":{\"srcTopic\": \"dmx/backup/szene/chillig_2\", \"dstTopic\": \"dmx/mover_1/set/programm\", \"chOffset\": 14}}, \"szeneBar3\": {\"Nr\":3, \"fadeTime\": 8.0, \"wait\": 0.0, \"universeFooFoo\":{\"srcTopic\": \"dmx/backup/pos/Big_Baam\", \"dstTopic\": \"dmx/mover_1/set/programm\", \"chOffset\": 0}, \"universeBarFoo\":{\"srcTopic\": \"dmx/backup/pos/Big_Baam\", \"dstTopic\": \"dmx/mover_1/set/programm\", \"chOffset\": 14}} }"
+
+
+ 
 # einige Globale Variablen zum Empfangen der Daten
 
 SrcData = {}
-Programms = {}
 
- 
+
 # Eine Variable und eine Funktion zum Testen des Skripts
 testProg = {"sceneFoo2": {"Nr":2, "fadeTime": 10, "wait": 0.5, "universeFoo":{"srcTopic": "dmx/backup/szene/hell", "dstTopic": "foo/bar", "chOffset": 0}, "universeBar":{"srcTopic": "dmx/backup/szene/hell", "dstTopic": "foofoo/bar", "chOffset": 14}}, "szeneBar1": {"Nr":1, "fadeTime": 2.5, "wait": 1.0, "universeFoo":{"srcTopic": "dmx/backup/pos/Garten", "dstTopic": "foo/bar", "chOffset": 2}, "universeBarFoo":{"srcTopic": "dmx/backup/pos/Garten", "dstTopic": "foo/foobar", "chOffset": 14}}, "szeneBar3": {"Nr":3, "fadeTime": 2.6, "wait": 0.8, "universeFooFoo":{"srcTopic": "dmx/backup/pos/Big_Baam", "dstTopic": "foo/bar", "chOffset": 2}, "universeBarFoo":{"srcTopic": "dmx/backup/pos/Big_Baam", "dstTopic": "foo/foobar", "chOffset": 15}} }
 
@@ -39,7 +44,6 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     global SrcData
-    global Programms
 
     temp = json.loads(str(msg.payload))
     print("thread %i" % thread.get_ident())
@@ -60,9 +64,8 @@ client.on_message = on_message
 
 
 def getMqttData(topic, verbose):
- 
-    global Data
-    global DataTopic
+    global SrcData
+    
     if verbose:
         print("subscribe to %s" % topic)
     
@@ -82,6 +85,7 @@ def getMqttData(topic, verbose):
         sleep(0.1)
 
     if not topic in SrcData:
+        client.publish("fader/info", "No MQTT Data received. Topic was: %s" %topic)
         if verbose:
             print("Error! Keine Mqtt Daten empfangen")
         raise RuntimeError
@@ -92,6 +96,7 @@ def getMqttData(topic, verbose):
 def fadeChannels(scene, savedDstData, universes, verbose):
  
     steps = {}
+    channelsToFade = {}
     tempFadeData = {}
     maxDelta = 0
     stepTime = 0.0
@@ -109,6 +114,11 @@ def fadeChannels(scene, savedDstData, universes, verbose):
                 newChannel = str(int(channel) + scene[device]["chOffset"])
                 scene[device]["newSrcData"][newChannel] = scene[device]["srcData"][channel]
                 channelsModified = True
+            else:
+                if "newSrcData" not in scene[device]:
+                    scene[device]["newSrcData"] = {}
+                scene[device]["newSrcData"][channel] = scene[device]["srcData"][channel]
+                channelsModified = True
         if channelsModified:
             del scene[device]["srcData"]
             scene[device]["srcData"] = scene[device].pop("newSrcData")
@@ -119,6 +129,7 @@ def fadeChannels(scene, savedDstData, universes, verbose):
         # Topic als key im dict anlegen damit man es nachher befuellen kann
         if scene[device]["dstTopic"] not in steps:
             steps[scene[device]["dstTopic"]] = {}
+            channelsToFade[scene[device]["dstTopic"]] = {}
             tempFadeData[scene[device]["dstTopic"]] = {}
         # Wir ermitteln uns den max Delta der Kanaele
         for channel in scene[device]["srcData"].keys():
@@ -156,6 +167,15 @@ def fadeChannels(scene, savedDstData, universes, verbose):
             print("Delta:")
             print(steps[scene[device]["dstTopic"]])
  
+    for channel in savedDstData[scene[device]["dstTopic"]].keys():
+        if channel not in steps[scene[device]["dstTopic"]]:
+            del savedDstData[scene[device]["dstTopic"]][channel]
+        
+    for device in universes:
+        #Wir legen uns ein neues Quelldaten Dict an damit wir nur die Känäle senden die wir bearbeiten        
+        for channel in steps[scene[device]["dstTopic"]].keys():
+            channelsToFade[scene[device]["dstTopic"]][channel] = savedDstData[scene[device]["dstTopic"]][channel]
+            
     # Wir wollen ueber alle Kanaele faden
     initVar = True
     dstreached = True
@@ -172,27 +192,30 @@ def fadeChannels(scene, savedDstData, universes, verbose):
             for channel in scene[device]["srcData"].keys():
                 # Init Dict mit den benoetigten Channels
                 if initVar:
-                    if type(scene[device]["srcData"][channel]) is int:
-                        tempFadeData[scene[device]["dstTopic"]][channel] = float(savedDstData[scene[device]["dstTopic"]][channel]) + steps[scene[device]["dstTopic"]][channel]
-                        savedDstData[scene[device]["dstTopic"]][channel] = int(tempFadeData[scene[device]["dstTopic"]][channel])
+                    if type(scene[device]["srcData"][channel]) is int and not stepTime == 0.0:
+                        tempFadeData[scene[device]["dstTopic"]][channel] = float(channelsToFade[scene[device]["dstTopic"]][channel]) + steps[scene[device]["dstTopic"]][channel]
+                        channelsToFade[scene[device]["dstTopic"]][channel] = int(tempFadeData[scene[device]["dstTopic"]][channel])
                     else:
-                        savedDstData[scene[device]["dstTopic"]][channel] = scene[device]["srcData"][channel]
+                        channelsToFade[scene[device]["dstTopic"]][channel] = scene[device]["srcData"][channel]
                     publishData = True
                 # Errechne die neuen Dim Werte wenn der Zielwert noch nicht erreicht ist (Floating Point addition!!)
-                elif savedDstData[scene[device]["dstTopic"]][channel] != scene[device]["srcData"][channel]:
+                # todo faden ausbauen wenn stepTime == 0.0
+                elif channelsToFade[scene[device]["dstTopic"]][channel] != scene[device]["srcData"][channel]:
                     tempFadeData[scene[device]["dstTopic"]][channel] = tempFadeData[scene[device]["dstTopic"]][channel] + steps[scene[device]["dstTopic"]][channel]
-                    savedDstData[scene[device]["dstTopic"]][channel] = int(tempFadeData[scene[device]["dstTopic"]][channel])
+                    channelsToFade[scene[device]["dstTopic"]][channel] = int(tempFadeData[scene[device]["dstTopic"]][channel])
                 publishData = True
-                if savedDstData[scene[device]["dstTopic"]][channel] != scene[device]["srcData"][channel] and i + 1 == maxDelta:
+                if channelsToFade[scene[device]["dstTopic"]][channel] != scene[device]["srcData"][channel] and i + 1 == maxDelta:
                     dstreached = False
-            # Todo send data here
-            if publishData:
-                client.publish(scene[device]["dstTopic"], json.dumps(savedDstData[scene[device]["dstTopic"]]), retain = False)
- 
+            
+            # Wir wollen die Daten der zwischenschritte nur senden wenn es eine Step Time gibt. In der letzen Runde natürlich schon
+            if stepTime > 0.0 or i +1 == maxDelta or i == maxDelta:
+                if publishData:
+                    client.publish(scene[device]["dstTopic"], json.dumps(channelsToFade[scene[device]["dstTopic"]]), retain = False)
+                               
         initVar = False
  
         if verbose:
-            print(savedDstData)
+            print(channelsToFade)
  
         if dstreached:
             while timeStamp > time.time():
@@ -213,9 +236,9 @@ def fadeChannels(scene, savedDstData, universes, verbose):
         if verbose:
             print("Oops something went wrong! Did not reached endpoint.")
         for device in universes:
-            savedDstData[scene[device]["dstTopic"]].update(scene[device]["srcData"])
+            channelsToFade[scene[device]["dstTopic"]].update(scene[device]["srcData"])
  
-    return savedDstData
+    return channelsToFade
  
  
 def runProgramm(myProg, testMode = False, verbose = False):
@@ -270,7 +293,7 @@ def runProgramm(myProg, testMode = False, verbose = False):
 #Todo diese variablen sollen per argument uebergeben werden
 client.connect("192.168.178.38", 1883, 60)
 client.loop_start()
-client.subscribe("fader/programm")
+client.subscribe("dmx/fader/programm")
 
 #runProgramm(testProg, testMode = False, verbose = True)
 
